@@ -1,11 +1,6 @@
 import { parse } from "csv-parse";
 import { readFile } from "node:fs/promises";
-import {
-  TrainingItemNormalized,
-  TrainingItemUnnormalized,
-  v,
-  Value,
-} from "./MicroGrad";
+import { Classifier, TrainingItemUnnormalized } from "./MicroGrad";
 
 const normalize = (n) => n / (254 / 2) - 1;
 
@@ -22,33 +17,14 @@ function makeOutputNumber(num: number): number[] {
 async function go() {
   console.log("Parsing CSV");
 
-  const rawTrainingSet: { [key: string]: string }[] = [];
+  const trainingSet = await getTrainingSet();
 
-  // .on("data", (data) => {
-  //   // let input: number[] = [];
-  //   //
-  //   // for (let i = 0; i < 784; i++) {
-  //   //   input.push(Number(data[`pixel${i}`]));
-  //   // }
-  //   //
-  //   // trainingSet.push({
-  //   //   input,
-  //   //   output: makeOutputNumber(Number(data.label)),
-  //   // });
-  //   rawTrainingSet.push(data);
-  //
-  //   console.log("Row: " + row);
-  //   row++;
-  // })
-  // .on("end", () => {
-  //   // [
-  //   //   { NAME: 'Daffy Duck', AGE: '24' },
-  //   //   { NAME: 'Bugs Bunny', AGE: '22' }
-  //   // ]
-  // });
+  const net = new Classifier({ trainingSet, nin: 784, nouts: [20, 10], bs: 2 });
+
+  net.train();
 }
 
-function getTrainingSet() {
+function getTrainingSet(): Promise<TrainingItemUnnormalized[]> {
   return new Promise(async (resolve) => {
     const trainingSet: TrainingItemUnnormalized[] = [];
 
@@ -57,7 +33,6 @@ function getTrainingSet() {
       encoding: "ascii",
     });
 
-    console.log("parsing");
     const parser = parse(rawFile);
 
     parser.on("readable", () => {

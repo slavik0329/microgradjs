@@ -209,60 +209,80 @@ export interface NetworkOptions {
 export interface TrainerOptions extends NetworkOptions {
   trainingSet: TrainingItemUnnormalized[];
   learningRate?: number;
+  bs?: number;
 }
 
 export class Trainer extends MLP {
   private trainingSet: TrainingItemUnnormalized[];
   private iterations: number;
   private learningRate: number;
+  private bs: number;
 
   constructor({
     nin,
     nouts,
+    bs = 8,
     trainingSet,
     iterations = 100,
     learningRate = 0.05,
   }: TrainerOptions) {
     super(nin, nouts);
 
+    this.bs = bs;
     this.learningRate = learningRate;
     this.iterations = iterations;
     this.trainingSet = trainingSet;
-    // this.trainingSet = trainingSet.map((trainingItem) => ({
-    //   input: trainingItem.input.map((item) => v(item)),
-    //   output: trainingItem.output.map((item) => v(item)),
-    // }));
+  }
+
+  createBatch(
+    /** Which part of the training set to get the batch from */
+    batchIndex: number
+  ) {
+    const start = batchIndex * this.bs;
+    const rawBatch = this.trainingSet.filter(
+      (item, i) => i >= start && i < start + this.bs
+    );
+
+    const normalizedBatch: TrainingItemNormalized[] = rawBatch.map((item) => ({
+      input: item.input.map((it) => v(it)),
+      output: item.output.map((it) => v(it)),
+    }));
+
+    return normalizedBatch;
   }
 
   train() {
-    // for (let i = 0; i < this.iterations; i++) {
-    //   // Forward pass
-    //   const ypred = this.trainingSet.map((x) => this.call(x.input));
-    //   const lossPerExample = ypred.map((pred, i) => {
-    //     const lossPerCorrespondingValue = pred.map((predictedVal, i) => {
-    //       return predictedVal.sub(this.trainingSet[i].output[i]).pow(2);
-    //     });
-    //
-    //     return lossPerCorrespondingValue.reduce((prev, cur) => prev.add(cur));
-    //   });
-    //
-    //   const totalLoss = lossPerExample.reduce((prev, cur) => prev.add(cur));
-    //
-    //   // Backward pass
-    //   // Initialize all gradients back to zero
-    //   for (const p of this.parameters()) {
-    //     p.grad = 0;
-    //   }
-    //
-    //   totalLoss.backward();
-    //
-    //   // Update
-    //   for (const p of this.parameters()) {
-    //     p.data += -this.learningRate * p.grad;
-    //   }
-    //
-    //   console.log(`Step: ${i} Loss: ${totalLoss.data}`);
-    // }
+    const batch = this.createBatch(0);
+    console.log(batch);
+  }
+
+  trainOnePassOnBatch(normalizedBatch: TrainingItemNormalized[]) {
+    // Forward pass
+    const ypred = normalizedBatch.map((x) => this.call(x.input));
+    const lossPerExample = ypred.map((pred, i) => {
+      const lossPerCorrespondingValue = pred.map((predictedVal, i) => {
+        return predictedVal.sub(normalizedBatch[i].output[i]).pow(2);
+      });
+
+      return lossPerCorrespondingValue.reduce((prev, cur) => prev.add(cur));
+    });
+
+    const totalLoss = lossPerExample.reduce((prev, cur) => prev.add(cur));
+
+    // Backward pass
+    // Initialize all gradients back to zero
+    for (const p of this.parameters()) {
+      p.grad = 0;
+    }
+
+    totalLoss.backward();
+
+    // Update
+    for (const p of this.parameters()) {
+      p.data += -this.learningRate * p.grad;
+    }
+
+    console.log(`Step: x Loss: ${totalLoss.data}`);
   }
 }
 
