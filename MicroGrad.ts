@@ -182,9 +182,99 @@ export class MLP {
   }
 }
 
+export interface TrainingItemUnnormalized {
+  /** Numbers normalized from -1 – +1 */
+  input: number[];
+  /** Expected result */
+  output: number[];
+}
+
+export interface TrainingItemNormalized {
+  /** Values normalized from -1 – +1 */
+  input: Value[];
+  /** Expected result */
+  output: Value[];
+}
+
+export interface NetworkOptions {
+  /** Number of inputs into the network */
+  nin: number;
+  /** Array of neuron counts per layer
+   *  eg: [4, 4, 1] In this case there is only 1 output neuron
+   * */
+  nouts: number[];
+  iterations?: number;
+}
+
+export interface TrainerOptions extends NetworkOptions {
+  trainingSet: TrainingItemUnnormalized[];
+  learningRate?: number;
+}
+
+export class Trainer extends MLP {
+  private trainingSet: TrainingItemUnnormalized[];
+  private iterations: number;
+  private learningRate: number;
+
+  constructor({
+    nin,
+    nouts,
+    trainingSet,
+    iterations = 100,
+    learningRate = 0.05,
+  }: TrainerOptions) {
+    super(nin, nouts);
+
+    this.learningRate = learningRate;
+    this.iterations = iterations;
+    this.trainingSet = trainingSet;
+    // this.trainingSet = trainingSet.map((trainingItem) => ({
+    //   input: trainingItem.input.map((item) => v(item)),
+    //   output: trainingItem.output.map((item) => v(item)),
+    // }));
+  }
+
+  train() {
+    // for (let i = 0; i < this.iterations; i++) {
+    //   // Forward pass
+    //   const ypred = this.trainingSet.map((x) => this.call(x.input));
+    //   const lossPerExample = ypred.map((pred, i) => {
+    //     const lossPerCorrespondingValue = pred.map((predictedVal, i) => {
+    //       return predictedVal.sub(this.trainingSet[i].output[i]).pow(2);
+    //     });
+    //
+    //     return lossPerCorrespondingValue.reduce((prev, cur) => prev.add(cur));
+    //   });
+    //
+    //   const totalLoss = lossPerExample.reduce((prev, cur) => prev.add(cur));
+    //
+    //   // Backward pass
+    //   // Initialize all gradients back to zero
+    //   for (const p of this.parameters()) {
+    //     p.grad = 0;
+    //   }
+    //
+    //   totalLoss.backward();
+    //
+    //   // Update
+    //   for (const p of this.parameters()) {
+    //     p.data += -this.learningRate * p.grad;
+    //   }
+    //
+    //   console.log(`Step: ${i} Loss: ${totalLoss.data}`);
+    // }
+  }
+}
+
+export class Classifier extends Trainer {
+  constructor(options: TrainerOptions) {
+    super(options);
+  }
+}
+
 /** Helper for creating easy Value objects */
 export function v(num: number): Value {
-  return new Value(num);
+  return new Value(Number(num));
 }
 
 /** Get random number between -1 and +1 */
