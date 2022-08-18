@@ -1,3 +1,8 @@
+/** Helper for creating easy Value objects */
+export function v(num: number) {
+  return new Value(num);
+}
+
 export class Value {
   public data: number;
   public grad: number;
@@ -16,29 +21,17 @@ export class Value {
   }
 
   neg(): Value {
-    return this.mul(-1);
+    return this.mul(new Value(-1));
   }
 
-  sub(other: Value | number): Value {
-    if (typeof other === "number") {
-      other = new Value(other);
-    }
-
+  sub(other: Value): Value {
     return this.add(other.neg());
   }
 
-  add(other: Value | number): Value {
-    if (typeof other === "number") {
-      other = new Value(other);
-    }
-
+  add(other: Value): Value {
     const out = new Value(this.data + other.data, [this, other], "+");
 
     out._backward = () => {
-      if (typeof other === "number") {
-        throw "Shouldn't happen!";
-      }
-
       this.grad += out.grad;
       other.grad += out.grad;
     };
@@ -46,18 +39,10 @@ export class Value {
     return out;
   }
 
-  mul(other: Value | number): Value {
-    if (typeof other === "number") {
-      other = new Value(other);
-    }
-
+  mul(other: Value): Value {
     const out = new Value(this.data * other.data, [this, other], "*");
 
     out._backward = () => {
-      if (typeof other === "number") {
-        return;
-      }
-
       this.grad += other.data * out.grad;
       other.grad += this.data * out.grad;
     };
