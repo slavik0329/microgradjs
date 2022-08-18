@@ -1,8 +1,3 @@
-/** Helper for creating easy Value objects */
-export function v(num: number) {
-  return new Value(num);
-}
-
 export class Value {
   public data: number;
   public grad: number;
@@ -18,14 +13,6 @@ export class Value {
     this.label = label;
     this.grad = 0;
     this._backward = () => {};
-  }
-
-  neg(): Value {
-    return this.mul(new Value(-1));
-  }
-
-  sub(other: Value): Value {
-    return this.add(other.neg());
   }
 
   add(other: Value): Value {
@@ -84,14 +71,11 @@ export class Value {
     return out;
   }
 
-  div(other: Value): Value {
-    return this.mul(other.pow(-1));
-  }
-
   backward() {
     let topo: Value[] = [];
     let visited = new Set<Value>();
 
+    /** Builds backward graph of nodes to iterate through */
     function buildTopo(v: Value) {
       if (!visited.has(v)) {
         visited.add(v);
@@ -103,6 +87,8 @@ export class Value {
     }
 
     buildTopo(this);
+
+    // Set output node grad to 1
     this.grad = 1;
     topo.reverse();
 
@@ -110,10 +96,18 @@ export class Value {
       node._backward();
     }
   }
-}
 
-function getRandomNeuronValue() {
-  return Math.random() * 2 - 1;
+  sub(other: Value): Value {
+    return this.add(other.neg());
+  }
+
+  neg(): Value {
+    return this.mul(new Value(-1));
+  }
+
+  div(other: Value): Value {
+    return this.mul(other.pow(-1));
+  }
 }
 
 export class Neuron {
@@ -147,11 +141,11 @@ export class Layer {
     this.neurons = new Array(nout).fill(0).map(() => new Neuron(nin));
   }
 
-  call(x: Value[]) {
+  call(x: Value[]): Value[] {
     return this.neurons.map((neuron) => neuron.call(x));
   }
 
-  parameters() {
+  parameters(): Value[] {
     let params: Value[] = [];
 
     return this.neurons.reduce(
@@ -171,14 +165,14 @@ export class MLP {
       .map((val, i) => new Layer(sz[i], sz[i + 1]));
   }
 
-  call(x: Value[]) {
+  call(x: Value[]): Value[] {
     for (const layer of this.layers) {
       x = layer.call(x);
     }
     return x;
   }
 
-  parameters() {
+  parameters(): Value[] {
     let params: Value[] = [];
 
     return this.layers.reduce(
@@ -186,4 +180,14 @@ export class MLP {
       params
     );
   }
+}
+
+/** Helper for creating easy Value objects */
+export function v(num: number): Value {
+  return new Value(num);
+}
+
+/** Get random number between -1 and +1 */
+function getRandomNeuronValue(): number {
+  return Math.random() * 2 - 1;
 }
