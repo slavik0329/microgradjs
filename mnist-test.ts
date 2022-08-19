@@ -15,6 +15,7 @@ async function go() {
     nin: 784,
     nouts: [
       { numLayer: 100, activationFunction: "relu" },
+      { numLayer: 64, activationFunction: "relu" },
       { numLayer: 10, activationFunction: "relu" },
     ],
     bs: 20,

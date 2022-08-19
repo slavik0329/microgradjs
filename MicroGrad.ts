@@ -357,7 +357,7 @@ export class Trainer extends MLP {
       ) {
         const batch = this.createBatch(batchNum);
 
-        const output = this.trainOnePassOnBatch(batch, iterationIndex);
+        const output = this.trainOnePassOnBatch(batch);
         console.log(
           `Iteration: ${iterationIndex} Batch #: ${batchNum} Loss: ${output.totalLoss.data} Accuracy: ${output.accuracy} LR: ${this.learningRate}`
         );
@@ -367,10 +367,7 @@ export class Trainer extends MLP {
     const out = this;
   }
 
-  trainOnePassOnBatch(
-    normalizedBatch: TrainingItemNormalized[],
-    iteration: number
-  ): {
+  trainOnePassOnBatch(normalizedBatch: TrainingItemNormalized[]): {
     totalLoss: Value;
     accuracy: number;
   } {
@@ -408,7 +405,11 @@ export class Trainer extends MLP {
       accuracyFunction = this.getSimpleAccuracy;
     }
 
-    const accuracy: number = accuracyFunction(predictions, normalizedBatch);
+    const accuracy: number = accuracyFunction.call(
+      this,
+      predictions,
+      normalizedBatch
+    );
 
     return { totalLoss, accuracy };
   }
