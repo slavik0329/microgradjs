@@ -304,6 +304,7 @@ export class Trainer extends MLP {
   private trainingSet: TrainingItemUnnormalized[];
   private iterations: number;
   private learningRate: number;
+  private neuronRandomizer: NeuronRandomizer;
   private readonly bs: number;
   private readonly lossType: LossType;
 
@@ -324,6 +325,7 @@ export class Trainer extends MLP {
     this.iterations = iterations;
     this.trainingSet = trainingSet;
     this.lossType = lossType;
+    this.neuronRandomizer = neuronRandomizer;
   }
 
   createBatch(
@@ -344,7 +346,11 @@ export class Trainer extends MLP {
   }
 
   train() {
-    for (let i = 0; i < this.iterations; i++) {
+    for (
+      let iterationIndex = 0;
+      iterationIndex < this.iterations;
+      iterationIndex++
+    ) {
       for (
         let batchNum = 0;
         batchNum < Math.ceil(this.trainingSet.length / this.bs);
@@ -352,9 +358,9 @@ export class Trainer extends MLP {
       ) {
         const batch = this.createBatch(batchNum);
 
-        const loss = this.trainOnePassOnBatch(batch);
+        const output = this.trainOnePassOnBatch(batch, iterationIndex);
         console.log(
-          `Iteration: ${i} Batch #: ${batchNum} Loss: ${loss.data} LR: ${this.learningRate}`
+          `Iteration: ${iterationIndex} Batch #: ${batchNum} Loss: ${output.totalLoss.data} Accuracy: ${output.accuracy} LR: ${this.learningRate}`
         );
       }
     }
@@ -362,7 +368,13 @@ export class Trainer extends MLP {
     const out = this;
   }
 
-  trainOnePassOnBatch(normalizedBatch: TrainingItemNormalized[]): Value {
+  trainOnePassOnBatch(
+    normalizedBatch: TrainingItemNormalized[],
+    iteration: number
+  ): {
+    totalLoss: Value;
+    accuracy: number;
+  } {
     // Forward pass
     const predictions = normalizedBatch.map((x) => this.call(x.input));
 
@@ -389,7 +401,54 @@ export class Trainer extends MLP {
       p.data += -this.learningRate * p.grad;
     }
 
-    return totalLoss;
+    const accuracy: number = this.getSimpleAccuracy(
+      predictions,
+      normalizedBatch
+    );
+
+    return { totalLoss, accuracy };
+  }
+
+  // private getMultiClassAccuracy(
+  //   predictions: Value[][],
+  //   normalizedBatch: TrainingItemNormalized[]
+  // ) {
+  //   return (
+  //     predictions.reduce((prev, curPred, predictionIndex) => {
+  //       const result =
+  //         curPred.reduce((prevItem, curItem, itemIndex) => {
+  //           const trueThreshold =
+  //             this.neuronRandomizer === "ZERO_TO_ONE" ? 0.5 : 0;
+  //           const isGoodPrediction =
+  //             curItem.data > trueThreshold ===
+  //             normalizedBatch[predictionIndex].output[itemIndex].data >
+  //             trueThreshold;
+  //           return prevItem + (isGoodPrediction ? 1 : 0);
+  //         }, 0) / curPred.length;
+  //       return result + prev;
+  //     }, 0) / predictions.length
+  //   );
+  // }
+
+  private getSimpleAccuracy(
+    predictions: Value[][],
+    normalizedBatch: TrainingItemNormalized[]
+  ) {
+    return (
+      predictions.reduce((prev, curPred, predictionIndex) => {
+        const result =
+          curPred.reduce((prevItem, curItem, itemIndex) => {
+            const trueThreshold =
+              this.neuronRandomizer === "ZERO_TO_ONE" ? 0.5 : 0;
+            const isGoodPrediction =
+              curItem.data > trueThreshold ===
+              normalizedBatch[predictionIndex].output[itemIndex].data >
+                trueThreshold;
+            return prevItem + (isGoodPrediction ? 1 : 0);
+          }, 0) / curPred.length;
+        return result + prev;
+      }, 0) / predictions.length
+    );
   }
 
   private getMSELoss(

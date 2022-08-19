@@ -23,7 +23,7 @@ async function go() {
 
   const net = new Classifier({
     trainingSet: trainingSet,
-    neuronRandomizer: "NEG_ZERO_TO_ONE",
+    neuronRandomizer: "ZERO_TO_ONE",
     iterations: 1000,
     lossType: "MSE",
     nin: 2,

@@ -1,3 +1,5 @@
+/** Work in progress */
+
 import { Trainer } from "./MicroGrad";
 import { getTrainingSet } from "./utils";
 
@@ -9,20 +11,18 @@ async function go() {
   const net = new Trainer({
     trainingSet,
     lossType: "CROSS_ENTROPY",
+    neuronRandomizer: "ZERO_TO_ONE",
     nin: 784,
     nouts: [
       { numLayer: 100, activationFunction: "relu" },
-      { numLayer: 64, activationFunction: "relu" },
-      { numLayer: 10, activationFunction: "sigmoid" },
+      { numLayer: 10, activationFunction: "relu" },
     ],
     bs: 20,
     learningRate: 0.03,
   });
   console.log("Training");
 
-  // for (let i = 0; i < 10; i++) {
   net.train();
-  // }
 
   console.log("");
 }
