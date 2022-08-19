@@ -148,16 +148,23 @@ export class Value {
 }
 
 type ActivationFunctionType = "relu" | "sigmoid" | "tanh";
+type NeuronRandomizer = "ZERO_TO_ONE" | "NEG_ZERO_TO_ONE";
 
 export class Neuron {
   public w: Value[];
   public b: Value;
 
-  constructor(nin: number) {
-    this.w = new Array(nin)
-      .fill(0)
-      .map(() => new Value(getRandomNeuronValue()));
-    this.b = new Value(getRandomNeuronValue());
+  constructor(nin: number, neuronRandomizer: NeuronRandomizer = "ZERO_TO_ONE") {
+    let randomFunction = getRandomNeuronValueZeroAndOne;
+
+    if (neuronRandomizer === "ZERO_TO_ONE") {
+      randomFunction = getRandomNeuronValueZeroAndOne;
+    } else {
+      randomFunction = getRandomNeuronValueNegOneAndOne;
+    }
+
+    this.w = new Array(nin).fill(0).map(() => new Value(randomFunction()));
+    this.b = new Value(randomFunction());
   }
 
   call(x: Value[], activationFunction?: ActivationFunctionType) {
@@ -188,9 +195,12 @@ export class Layer {
   constructor(
     nin: number,
     nout: number,
-    activationFunction: ActivationFunctionType = "relu"
+    activationFunction: ActivationFunctionType = "relu",
+    neuronRandomizer: NeuronRandomizer = "ZERO_TO_ONE"
   ) {
-    this.neurons = new Array(nout).fill(0).map(() => new Neuron(nin));
+    this.neurons = new Array(nout)
+      .fill(0)
+      .map(() => new Neuron(nin, neuronRandomizer));
     this.activationFunction = activationFunction;
   }
 
@@ -218,14 +228,24 @@ type MLPLayer = {
 export class MLP {
   public layers: Layer[];
 
-  constructor(nin: number, nouts: MLPLayer[]) {
+  constructor(
+    nin: number,
+    nouts: MLPLayer[],
+    neuronRandomizer: NeuronRandomizer = "ZERO_TO_ONE"
+  ) {
     const layersArr = nouts.map((out) => out.numLayer);
 
     const sz = [nin, ...layersArr];
     this.layers = new Array(nouts.length)
       .fill(0)
       .map(
-        (val, i) => new Layer(sz[i], sz[i + 1], nouts[i].activationFunction)
+        (val, i) =>
+          new Layer(
+            sz[i],
+            sz[i + 1],
+            nouts[i].activationFunction,
+            neuronRandomizer
+          )
       );
   }
 
@@ -274,13 +294,18 @@ export interface TrainerOptions extends NetworkOptions {
   trainingSet: TrainingItemUnnormalized[];
   learningRate?: number;
   bs?: number;
+  lossType?: LossType;
+  neuronRandomizer?: NeuronRandomizer;
 }
+
+export type LossType = "MSE" | "CROSS_ENTROPY";
 
 export class Trainer extends MLP {
   private trainingSet: TrainingItemUnnormalized[];
   private iterations: number;
   private learningRate: number;
-  private bs: number;
+  private readonly bs: number;
+  private readonly lossType: LossType;
 
   constructor({
     nin,
@@ -289,13 +314,16 @@ export class Trainer extends MLP {
     trainingSet,
     iterations = 100,
     learningRate = 0.01,
+    lossType = "MSE",
+    neuronRandomizer = "ZERO_TO_ONE",
   }: TrainerOptions) {
-    super(nin, nouts);
+    super(nin, nouts, neuronRandomizer);
 
     this.bs = bs;
     this.learningRate = learningRate;
     this.iterations = iterations;
     this.trainingSet = trainingSet;
+    this.lossType = lossType;
   }
 
   createBatch(
@@ -316,36 +344,37 @@ export class Trainer extends MLP {
   }
 
   train() {
-    for (
-      let batchNum = 0;
-      batchNum < Math.ceil(this.trainingSet.length / this.bs);
-      batchNum++
-    ) {
-      const batch = this.createBatch(batchNum);
+    for (let i = 0; i < this.iterations; i++) {
+      for (
+        let batchNum = 0;
+        batchNum < Math.ceil(this.trainingSet.length / this.bs);
+        batchNum++
+      ) {
+        const batch = this.createBatch(batchNum);
 
-      const loss = this.trainOnePassOnBatch(batch);
-
-      // if (loss.data < 0.1) {
-      //   const evalTest = this.call(
-      //     this.trainingSet[100].input.map((it) => v(it))
-      //   );
-      //
-      //   console.log(evalTest);
-      //   return true;
-      // }
+        const loss = this.trainOnePassOnBatch(batch);
+        console.log(
+          `Iteration: ${i} Batch #: ${batchNum} Loss: ${loss.data} LR: ${this.learningRate}`
+        );
+      }
     }
 
-    const poop = this;
+    const out = this;
   }
 
   trainOnePassOnBatch(normalizedBatch: TrainingItemNormalized[]): Value {
     // Forward pass
     const predictions = normalizedBatch.map((x) => this.call(x.input));
 
-    const totalLoss = this.getSoftmaxCrossEntropyLoss(
-      predictions,
-      normalizedBatch
-    );
+    let lossFunction = this.getMSELoss;
+
+    if (this.lossType === "CROSS_ENTROPY") {
+      lossFunction = this.getSoftmaxCrossEntropyLoss;
+    } else if (this.lossType === "MSE") {
+      lossFunction = this.getMSELoss;
+    }
+
+    const totalLoss = lossFunction(predictions, normalizedBatch);
 
     // Backward pass
     // Initialize all gradients back to zero
@@ -360,14 +389,28 @@ export class Trainer extends MLP {
       p.data += -this.learningRate * p.grad;
     }
 
-    console.log(`Step: x Loss: ${totalLoss.data} LR: ${this.learningRate}`);
     return totalLoss;
+  }
+
+  private getMSELoss(
+    predictions: Value[][],
+    normalizedBatch: TrainingItemNormalized[]
+  ): Value {
+    const lossPerExample = predictions.map((pred, predsI) => {
+      const lossPerCorrespondingValue = pred.map((predictedVal, predI) => {
+        return predictedVal.sub(normalizedBatch[predsI].output[predI]).pow(2);
+      });
+
+      return lossPerCorrespondingValue.reduce((prev, cur) => prev.add(cur));
+    });
+
+    return lossPerExample.reduce((prev, cur) => prev.add(cur));
   }
 
   private getSoftmaxCrossEntropyLoss(
     predictions: Value[][],
     normalizedBatch: TrainingItemNormalized[]
-  ) {
+  ): Value {
     const lossPerExample = predictions.map((pred, predictionsI) => {
       const softMaxPrediction = softMax(pred);
       return crossEntropyLoss(
@@ -376,27 +419,16 @@ export class Trainer extends MLP {
       );
     });
 
-    const totalLoss = lossPerExample.reduce((prev, cur) => prev.add(cur));
-    return totalLoss;
+    return lossPerExample.reduce((prev, cur) => prev.add(cur));
   }
 }
 
-function softMax(x: Value[]) {
+function softMax(x: Value[]): Value[] {
   const sumParts = x.map((x) => x.exp());
   const sum = sumParts.reduce((prev, cur) => prev.add(cur));
 
   return x.map((item) => item.exp().div(sum));
 }
-
-// export function crossEntropyLoss(truth: Value[], prediction: Value[]) {
-//   const lossItems = truth.map((cur, index) =>
-//     prediction[index].log().mul(cur).neg()
-//   );
-//
-//   const loss = lossItems.reduce((prev, cur) => prev.add(cur));
-//
-//   return loss.div(v(truth.length));
-// }
 
 export function crossEntropyLoss(truth: Value[], prediction: Value[]) {
   const lossItems = truth.map((cur, index) =>
@@ -424,6 +456,11 @@ export function v(num: number): Value {
 }
 
 /** Get random number between 0 and +1 */
-function getRandomNeuronValue(): number {
-  return Math.random() * 2;
+function getRandomNeuronValueZeroAndOne(): number {
+  return Math.random();
+}
+
+/** Get random number between -1 and +1 */
+function getRandomNeuronValueNegOneAndOne(): number {
+  return Math.random() * 2 - 1;
 }
