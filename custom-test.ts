@@ -1,5 +1,4 @@
 import { Classifier, TrainingItemUnnormalized, v } from "./MicroGrad";
-import { getTrainingSet } from "./utils";
 
 async function go() {
   const trainingSet: TrainingItemUnnormalized[] = [
