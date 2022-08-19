@@ -2,12 +2,26 @@ import { TrainingItemUnnormalized } from "./MicroGrad";
 import { readFile } from "node:fs/promises";
 import { parse } from "csv-parse";
 
-export function getTrainingSet(): Promise<TrainingItemUnnormalized[]> {
+const normalize: (n) => number = (n) => n / (254 / 2) - 1;
+
+function makeOutputNumber(num: number): number[] {
+  let arr: number[] = [];
+
+  for (let i = 0; i < 10; i++) {
+    arr.push(i === num ? 1 : 0);
+  }
+
+  return arr;
+}
+
+export function getTrainingSet(
+  fileName: string
+): Promise<TrainingItemUnnormalized[]> {
   return new Promise(async (resolve) => {
     const trainingSet: TrainingItemUnnormalized[] = [];
 
     let row = 0;
-    const rawFile = await readFile("./trainData/train.csv", {
+    const rawFile = await readFile(fileName, {
       encoding: "ascii",
     });
 

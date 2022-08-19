@@ -8,11 +8,8 @@ async function go() {
 
   const net = new Classifier({
     trainingSet: trainingSet,
-    nin: 784,
-    nouts: [
-      { numLayer: 100, activationFunction: "sigmoid" },
-      { numLayer: 10, activationFunction: "sigmoid" },
-    ],
+    nin: 2,
+    nouts: [{ numLayer: 10, activationFunction: "tanh" }],
     bs: 20,
     learningRate: 0.05,
   });

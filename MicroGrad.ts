@@ -50,6 +50,43 @@ export class Value {
     return out;
   }
 
+  log(): Value {
+    // Performs tanh on this.data
+    const t = Math.log(this.data);
+
+    const out = new Value(t, [this], "log");
+
+    out._backward = () => {
+      this.grad += (1 / this.data) * out.grad;
+    };
+
+    return out;
+  }
+
+  sigmoid(): Value {
+    // Performs tanh on this.data
+    const s = 1 / (1 + Math.exp(-this.data));
+
+    const out = new Value(s, [this], "sig");
+
+    out._backward = () => {
+      this.grad += s - (1 - s) * out.grad;
+    };
+
+    return out;
+  }
+
+  relu(): Value {
+    // Performs tanh on this.data
+    const out = new Value(this.data < 0 ? 0 : this.data, [this], "ReLu");
+
+    out._backward = () => {
+      this.grad += out.data > 0 ? out.data * out.grad : 0;
+    };
+
+    return out;
+  }
+
   exp(): Value {
     const x = this.data;
     const out = new Value(Math.exp(x), [this], "exp");
@@ -110,6 +147,8 @@ export class Value {
   }
 }
 
+type ActivationFunctionType = "relu" | "sigmoid" | "tanh";
+
 export class Neuron {
   public w: Value[];
   public b: Value;
@@ -121,12 +160,20 @@ export class Neuron {
     this.b = new Value(getRandomNeuronValue());
   }
 
-  call(x: Value[]) {
+  call(x: Value[], activationFunction?: ActivationFunctionType) {
     const activation = x.reduce(
       (prev, cur, i) => prev.add(this.w[i].mul(cur)),
       this.b
     );
-    return activation.tanh();
+    if (activationFunction === "relu") {
+      return activation.relu();
+    } else if (activationFunction === "sigmoid") {
+      return activation.sigmoid();
+    } else if (activationFunction === "tanh") {
+      return activation.tanh();
+    } else {
+      return activation.relu();
+    }
   }
 
   parameters(): Value[] {
@@ -136,13 +183,21 @@ export class Neuron {
 
 export class Layer {
   public neurons: Neuron[];
+  public activationFunction: ActivationFunctionType;
 
-  constructor(nin: number, nout: number) {
+  constructor(
+    nin: number,
+    nout: number,
+    activationFunction: ActivationFunctionType = "relu"
+  ) {
     this.neurons = new Array(nout).fill(0).map(() => new Neuron(nin));
+    this.activationFunction = activationFunction;
   }
 
   call(x: Value[]): Value[] {
-    return this.neurons.map((neuron) => neuron.call(x));
+    return this.neurons.map((neuron) =>
+      neuron.call(x, this.activationFunction)
+    );
   }
 
   parameters(): Value[] {
@@ -155,14 +210,23 @@ export class Layer {
   }
 }
 
+type MLPLayer = {
+  numLayer: number;
+  activationFunction: ActivationFunctionType;
+};
+
 export class MLP {
   public layers: Layer[];
 
-  constructor(nin: number, nouts: number[]) {
-    const sz = [nin, ...nouts];
+  constructor(nin: number, nouts: MLPLayer[]) {
+    const layersArr = nouts.map((out) => out.numLayer);
+
+    const sz = [nin, ...layersArr];
     this.layers = new Array(nouts.length)
       .fill(0)
-      .map((val, i) => new Layer(sz[i], sz[i + 1]));
+      .map(
+        (val, i) => new Layer(sz[i], sz[i + 1], nouts[i].activationFunction)
+      );
   }
 
   call(x: Value[]): Value[] {
@@ -202,7 +266,7 @@ export interface NetworkOptions {
   /** Array of neuron counts per layer
    *  eg: [4, 4, 1] In this case there is only 1 output neuron
    * */
-  nouts: number[];
+  nouts: MLPLayer[];
   iterations?: number;
 }
 
@@ -221,10 +285,10 @@ export class Trainer extends MLP {
   constructor({
     nin,
     nouts,
-    bs = 8,
+    bs = 64,
     trainingSet,
     iterations = 100,
-    learningRate = 0.05,
+    learningRate = 0.01,
   }: TrainerOptions) {
     super(nin, nouts);
 
@@ -252,22 +316,36 @@ export class Trainer extends MLP {
   }
 
   train() {
-    const batch = this.createBatch(0);
-    console.log(batch);
+    for (
+      let batchNum = 0;
+      batchNum < Math.ceil(this.trainingSet.length / this.bs);
+      batchNum++
+    ) {
+      const batch = this.createBatch(batchNum);
+
+      const loss = this.trainOnePassOnBatch(batch);
+
+      // if (loss.data < 0.1) {
+      //   const evalTest = this.call(
+      //     this.trainingSet[100].input.map((it) => v(it))
+      //   );
+      //
+      //   console.log(evalTest);
+      //   return true;
+      // }
+    }
+
+    const poop = this;
   }
 
-  trainOnePassOnBatch(normalizedBatch: TrainingItemNormalized[]) {
+  trainOnePassOnBatch(normalizedBatch: TrainingItemNormalized[]): Value {
     // Forward pass
-    const ypred = normalizedBatch.map((x) => this.call(x.input));
-    const lossPerExample = ypred.map((pred, i) => {
-      const lossPerCorrespondingValue = pred.map((predictedVal, i) => {
-        return predictedVal.sub(normalizedBatch[i].output[i]).pow(2);
-      });
+    const predictions = normalizedBatch.map((x) => this.call(x.input));
 
-      return lossPerCorrespondingValue.reduce((prev, cur) => prev.add(cur));
-    });
-
-    const totalLoss = lossPerExample.reduce((prev, cur) => prev.add(cur));
+    const totalLoss = this.getSoftmaxCrossEntropyLoss(
+      predictions,
+      normalizedBatch
+    );
 
     // Backward pass
     // Initialize all gradients back to zero
@@ -282,8 +360,56 @@ export class Trainer extends MLP {
       p.data += -this.learningRate * p.grad;
     }
 
-    console.log(`Step: x Loss: ${totalLoss.data}`);
+    console.log(`Step: x Loss: ${totalLoss.data} LR: ${this.learningRate}`);
+    return totalLoss;
   }
+
+  private getSoftmaxCrossEntropyLoss(
+    predictions: Value[][],
+    normalizedBatch: TrainingItemNormalized[]
+  ) {
+    const lossPerExample = predictions.map((pred, predictionsI) => {
+      const softMaxPrediction = softMax(pred);
+      return crossEntropyLoss(
+        normalizedBatch[predictionsI].output,
+        softMaxPrediction
+      );
+    });
+
+    const totalLoss = lossPerExample.reduce((prev, cur) => prev.add(cur));
+    return totalLoss;
+  }
+}
+
+function softMax(x: Value[]) {
+  const sumParts = x.map((x) => x.exp());
+  const sum = sumParts.reduce((prev, cur) => prev.add(cur));
+
+  return x.map((item) => item.exp().div(sum));
+}
+
+// export function crossEntropyLoss(truth: Value[], prediction: Value[]) {
+//   const lossItems = truth.map((cur, index) =>
+//     prediction[index].log().mul(cur).neg()
+//   );
+//
+//   const loss = lossItems.reduce((prev, cur) => prev.add(cur));
+//
+//   return loss.div(v(truth.length));
+// }
+
+export function crossEntropyLoss(truth: Value[], prediction: Value[]) {
+  const lossItems = truth.map((cur, index) =>
+    cur
+      .neg()
+      .mul(prediction[index])
+      .sub(v(1).sub(cur))
+      .mul(v(1).sub(prediction[index]).log())
+  );
+
+  const loss = lossItems.reduce((prev, cur) => prev.add(cur));
+
+  return loss.div(v(truth.length));
 }
 
 export class Classifier extends Trainer {
@@ -297,7 +423,7 @@ export function v(num: number): Value {
   return new Value(Number(num));
 }
 
-/** Get random number between -1 and +1 */
+/** Get random number between 0 and +1 */
 function getRandomNeuronValue(): number {
-  return Math.random() * 2 - 1;
+  return Math.random() * 2;
 }
