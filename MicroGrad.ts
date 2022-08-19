@@ -64,7 +64,6 @@ export class Value {
   }
 
   sigmoid(): Value {
-    // Performs tanh on this.data
     const s = 1 / (1 + Math.exp(-this.data));
 
     const out = new Value(s, [this], "sig");
@@ -77,7 +76,6 @@ export class Value {
   }
 
   relu(): Value {
-    // Performs tanh on this.data
     const out = new Value(this.data < 0 ? 0 : this.data, [this], "ReLu");
 
     out._backward = () => {
@@ -167,11 +165,12 @@ export class Neuron {
     this.b = new Value(randomFunction());
   }
 
-  call(x: Value[], activationFunction?: ActivationFunctionType) {
+  call(x: Value[], activationFunction: ActivationFunctionType) {
     const activation = x.reduce(
       (prev, cur, i) => prev.add(this.w[i].mul(cur)),
       this.b
     );
+
     if (activationFunction === "relu") {
       return activation.relu();
     } else if (activationFunction === "sigmoid") {
@@ -401,34 +400,53 @@ export class Trainer extends MLP {
       p.data += -this.learningRate * p.grad;
     }
 
-    const accuracy: number = this.getSimpleAccuracy(
-      predictions,
-      normalizedBatch
-    );
+    let accuracyFunction = this.getSimpleAccuracy;
+
+    if (this.lossType === "CROSS_ENTROPY") {
+      accuracyFunction = this.getMultiClassAccuracy;
+    } else if (this.lossType === "MSE") {
+      accuracyFunction = this.getSimpleAccuracy;
+    }
+
+    const accuracy: number = accuracyFunction(predictions, normalizedBatch);
 
     return { totalLoss, accuracy };
   }
 
-  // private getMultiClassAccuracy(
-  //   predictions: Value[][],
-  //   normalizedBatch: TrainingItemNormalized[]
-  // ) {
-  //   return (
-  //     predictions.reduce((prev, curPred, predictionIndex) => {
-  //       const result =
-  //         curPred.reduce((prevItem, curItem, itemIndex) => {
-  //           const trueThreshold =
-  //             this.neuronRandomizer === "ZERO_TO_ONE" ? 0.5 : 0;
-  //           const isGoodPrediction =
-  //             curItem.data > trueThreshold ===
-  //             normalizedBatch[predictionIndex].output[itemIndex].data >
-  //             trueThreshold;
-  //           return prevItem + (isGoodPrediction ? 1 : 0);
-  //         }, 0) / curPred.length;
-  //       return result + prev;
-  //     }, 0) / predictions.length
-  //   );
-  // }
+  private getMultiClassAccuracy(
+    predictions: Value[][],
+    normalizedBatch: TrainingItemNormalized[]
+  ) {
+    return (
+      predictions.reduce((prev, curPred, predictionIndex) => {
+        // Index of the output neuron that fires the most
+        let maxPredictionOutputIndex = 0;
+        let maxPredictionOutputVal = 0;
+        let maxTruthIndex = 0;
+        let maxTruthVal = 0;
+
+        curPred.forEach((item, i) => {
+          if (item.data > maxPredictionOutputVal) {
+            maxPredictionOutputIndex = i;
+            maxPredictionOutputVal = item.data;
+          }
+        });
+
+        normalizedBatch[predictionIndex].output.forEach((item, i) => {
+          if (item.data > maxTruthVal) {
+            maxTruthIndex = i;
+            maxTruthVal = item.data;
+          }
+        });
+
+        if (maxPredictionOutputIndex === maxTruthIndex) {
+          return 1;
+        } else {
+          return 0;
+        }
+      }, 0) / predictions.length
+    );
+  }
 
   private getSimpleAccuracy(
     predictions: Value[][],
