@@ -11,15 +11,16 @@ async function go() {
   const net = new Trainer({
     trainingSet,
     lossType: "CROSS_ENTROPY",
-    neuronRandomizer: "ZERO_TO_ONE",
+    neuronRandomizer: "NEG_ZERO_TO_ONE",
     nin: 784,
     nouts: [
-      { numLayer: 100, activationFunction: "relu" },
+      { numLayer: 128, activationFunction: "relu" },
       { numLayer: 64, activationFunction: "relu" },
-      { numLayer: 10, activationFunction: "tanh" },
+      { numLayer: 10, activationFunction: "softmax" },
     ],
     bs: 32,
-    learningRate: 0.03,
+    iterations: 10,
+    learningRate: 0.003,
   });
   console.log("Training");
 

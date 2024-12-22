@@ -51,13 +51,15 @@ export class Value {
   }
 
   log(): Value {
-    // Performs tanh on this.data
-    const t = Math.log(this.data);
+    // Instead of Math.log(this.data),
+    // clamp to a small positive value
+    const eps = 1e-9;
+    const valClamped = this.data < eps ? eps : this.data;
+    const t = Math.log(valClamped);
 
     const out = new Value(t, [this], "log");
-
     out._backward = () => {
-      this.grad += (1 / this.data) * out.grad;
+      this.grad += (1 / valClamped) * out.grad;
     };
 
     return out;
@@ -122,11 +124,17 @@ export class Value {
     }
 
     buildTopo(this);
-
-    // Set output node grad to 1
-    this.grad = 1;
     topo.reverse();
 
+    // Initialize gradients
+    this.grad = 1;
+    for (const node of topo) {
+      if (node !== this) {
+        node.grad = 0;
+      }
+    }
+
+    // Backward pass
     for (const node of topo) {
       node._backward();
     }
@@ -145,7 +153,7 @@ export class Value {
   }
 }
 
-type ActivationFunctionType = "relu" | "sigmoid" | "tanh";
+type ActivationFunctionType = "relu" | "sigmoid" | "tanh" | "softmax";
 type NeuronRandomizer = "ZERO_TO_ONE" | "NEG_ZERO_TO_ONE";
 
 export class Neuron {
@@ -161,8 +169,12 @@ export class Neuron {
       randomFunction = getRandomNeuronValueNegOneAndOne;
     }
 
-    this.w = new Array(nin).fill(0).map(() => new Value(randomFunction()));
-    this.b = new Value(randomFunction());
+    // Xavier/Glorot initialization
+    const scale = Math.sqrt(2.0 / nin);
+    this.w = new Array(nin)
+      .fill(0)
+      .map(() => new Value(randomFunction() * scale));
+    this.b = new Value(0); // Initialize biases to zero
   }
 
   call(x: Value[], activationFunction: ActivationFunctionType) {
@@ -177,6 +189,8 @@ export class Neuron {
       return activation.sigmoid();
     } else if (activationFunction === "tanh") {
       return activation.tanh();
+    } else if (activationFunction === "softmax") {
+      return activation; // Softmax will be applied at the layer level
     } else {
       return activation.relu();
     }
@@ -204,9 +218,10 @@ export class Layer {
   }
 
   call(x: Value[]): Value[] {
-    return this.neurons.map((neuron) =>
+    const outputs = this.neurons.map((neuron) =>
       neuron.call(x, this.activationFunction)
     );
+    return outputs;
   }
 
   parameters(): Value[] {
@@ -375,14 +390,14 @@ export class Trainer extends MLP {
     const predictions = normalizedBatch.map((x) => this.call(x.input));
 
     let lossFunction = this.getMSELoss;
+    let accuracyFunction = this.getSimpleAccuracy;
 
     if (this.lossType === "CROSS_ENTROPY") {
       lossFunction = this.getSoftmaxCrossEntropyLoss;
-    } else if (this.lossType === "MSE") {
-      lossFunction = this.getMSELoss;
+      accuracyFunction = this.getMultiClassAccuracy;
     }
 
-    const totalLoss = lossFunction(predictions, normalizedBatch);
+    const totalLoss = lossFunction.call(this, predictions, normalizedBatch);
 
     // Backward pass
     // Initialize all gradients back to zero
@@ -392,24 +407,26 @@ export class Trainer extends MLP {
 
     totalLoss.backward();
 
-    // Update
-    for (const p of this.parameters()) {
-      p.data += -this.learningRate * p.grad;
+    // Update with gradient clipping
+    const maxGradNorm = 1.0;
+    let gradNorm = 0;
+    const params = this.parameters();
+
+    // Calculate gradient norm
+    for (const p of params) {
+      gradNorm += p.grad * p.grad;
+    }
+    gradNorm = Math.sqrt(gradNorm);
+
+    // Scale factor for gradient clipping
+    const scale = Math.min(1.0, maxGradNorm / (gradNorm + 1e-6));
+
+    // Update with clipped gradients
+    for (const p of params) {
+      p.data += -this.learningRate * p.grad * scale;
     }
 
-    let accuracyFunction = this.getSimpleAccuracy;
-
-    if (this.lossType === "CROSS_ENTROPY") {
-      accuracyFunction = this.getMultiClassAccuracy;
-    } else if (this.lossType === "MSE") {
-      accuracyFunction = this.getSimpleAccuracy;
-    }
-
-    const accuracy: number = accuracyFunction.call(
-      this,
-      predictions,
-      normalizedBatch
-    );
+    const accuracy = accuracyFunction.call(this, predictions, normalizedBatch);
 
     return { totalLoss, accuracy };
   }
@@ -418,35 +435,39 @@ export class Trainer extends MLP {
     predictions: Value[][],
     normalizedBatch: TrainingItemNormalized[]
   ) {
-    return (
-      predictions.reduce((prev, curPred, predictionIndex) => {
-        // Index of the output neuron that fires the most
-        let maxPredictionOutputIndex = 0;
-        let maxPredictionOutputVal = 0;
-        let maxTruthIndex = 0;
-        let maxTruthVal = 0;
+    let correct = 0;
+    const total = predictions.length;
 
-        curPred.forEach((item, i) => {
-          if (item.data > maxPredictionOutputVal) {
-            maxPredictionOutputIndex = i;
-            maxPredictionOutputVal = item.data;
-          }
-        });
+    for (let i = 0; i < total; i++) {
+      const pred = predictions[i];
+      const truth = normalizedBatch[i].output;
 
-        normalizedBatch[predictionIndex].output.forEach((item, i) => {
-          if (item.data > maxTruthVal) {
-            maxTruthIndex = i;
-            maxTruthVal = item.data;
-          }
-        });
-
-        if (maxPredictionOutputIndex === maxTruthIndex) {
-          return 1;
-        } else {
-          return 0;
+      // Get predicted class (max index)
+      let maxPredIdx = 0;
+      let maxPredVal = pred[0].data;
+      for (let j = 1; j < pred.length; j++) {
+        if (pred[j].data > maxPredVal) {
+          maxPredVal = pred[j].data;
+          maxPredIdx = j;
         }
-      }, 0) / predictions.length
-    );
+      }
+
+      // Get true class (max index)
+      let maxTruthIdx = 0;
+      let maxTruthVal = truth[0].data;
+      for (let j = 1; j < truth.length; j++) {
+        if (truth[j].data > maxTruthVal) {
+          maxTruthVal = truth[j].data;
+          maxTruthIdx = j;
+        }
+      }
+
+      if (maxPredIdx === maxTruthIdx) {
+        correct++;
+      }
+    }
+
+    return correct / total;
   }
 
   private getSimpleAccuracy(
@@ -482,46 +503,84 @@ export class Trainer extends MLP {
       return lossPerCorrespondingValue.reduce((prev, cur) => prev.add(cur));
     });
 
-    return lossPerExample.reduce((prev, cur) => prev.add(cur));
+    return lossPerExample
+      .reduce((prev, cur) => prev.add(cur))
+      .div(v(normalizedBatch.length));
   }
 
   private getSoftmaxCrossEntropyLoss(
     predictions: Value[][],
     normalizedBatch: TrainingItemNormalized[]
   ): Value {
-    const lossPerExample = predictions.map((pred, i) => {
-      const softMaxPrediction = softMax(pred);
-      return crossEntropyLoss(normalizedBatch[i].output, softMaxPrediction);
-    });
+    let totalLoss = new Value(0);
 
-    return lossPerExample.reduce((prev, cur) => prev.add(cur));
+    // Process one example at a time to save memory
+    for (let i = 0; i < predictions.length; i++) {
+      const logits = predictions[i];
+
+      // Compute max for numerical stability
+      let maxLogit = logits[0].data;
+      for (let j = 1; j < logits.length; j++) {
+        maxLogit = Math.max(maxLogit, logits[j].data);
+      }
+
+      // Compute exp(logits - max_logit) and sum
+      let sumExp = new Value(0);
+      const exps: Value[] = [];
+      for (const logit of logits) {
+        const exp = logit.sub(new Value(maxLogit)).exp();
+        exps.push(exp);
+        sumExp = sumExp.add(exp);
+      }
+
+      // Compute softmax probabilities and loss
+      let exampleLoss = new Value(0);
+      for (let j = 0; j < logits.length; j++) {
+        const prob = exps[j].div(sumExp);
+        const target = normalizedBatch[i].output[j];
+        if (target.data > 0) {
+          // Only compute log prob for the true class
+          const eps = 1e-15;
+          const safeProb = Math.max(eps, Math.min(1 - eps, prob.data));
+          exampleLoss = exampleLoss.add(
+            target.mul(new Value(Math.log(safeProb)))
+          );
+        }
+      }
+
+      totalLoss = totalLoss.add(exampleLoss.neg());
+    }
+
+    return totalLoss.div(v(predictions.length));
   }
 }
 
 function softMax(x: Value[]): Value[] {
-  const sumParts = x.map((x) => x.exp());
-  const sum = sumParts.reduce((prev, cur) => prev.add(cur));
+  // Subtract max for numerical stability
+  const maxVal = Math.max(...x.map((v) => v.data));
+  const shiftedX = x.map((v) => new Value(v.data - maxVal));
 
-  return x.map((item) => item.exp().div(sum));
+  const exps = shiftedX.map((v) => v.exp());
+  const sumExp = exps.reduce((a, b) => a.add(b));
+
+  return exps.map((exp) => exp.div(sumExp));
 }
 
 function crossEntropyLoss(truth: Value[], prediction: Value[]): Value {
-  // L = - sum( y_k * log(pred_k ) )
-  // Summed over all classes k, then typically averaged
-  const lossItems = truth.map((t, i) => {
-    // We want - y_k * log( \hat{y}_k )
-    return t.mul(prediction[i].log()); // no minus sign here yet
+  // Add numerical stability by clamping predictions to avoid log(0)
+  const eps = 1e-15;
+  const clampedPreds = prediction.map((p) => {
+    const val = p.data < eps ? eps : p.data > 1 - eps ? 1 - eps : p.data;
+    return new Value(val);
   });
 
-  // Sum up
-  let loss = lossItems.reduce((prev, cur) => prev.add(cur));
+  // Cross entropy loss for multi-class classification
+  const lossItems = truth.map((t, i) => {
+    return t.mul(clampedPreds[i].log());
+  });
 
-  // Now multiply by -1 to get the negative log-likelihood
-  loss = loss.neg();
-
-  // If you want to average over the number of classes:
-  // (depends on your design, but typically it's an average)
-  loss = loss.div(v(truth.length));
+  // Sum up and negate
+  let loss = lossItems.reduce((prev, cur) => prev.add(cur)).neg();
 
   return loss;
 }

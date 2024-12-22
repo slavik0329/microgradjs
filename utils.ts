@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { parse } from "csv-parse";
 
 // const normalize: (n) => number = (n) => n / (254 / 2) - 1;
-const normalize: (n) => number = (n) => n / 254;
+const normalize: (n) => number = (n) => n / 127.5 - 1;
 
 function makeOutputNumber(num: number): number[] {
   let arr: number[] = [];
