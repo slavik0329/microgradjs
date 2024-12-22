@@ -69,7 +69,7 @@ export class Value {
     const out = new Value(s, [this], "sig");
 
     out._backward = () => {
-      this.grad += s - (1 - s) * out.grad;
+      this.grad += s * (1 - s) * out.grad;
     };
 
     return out;
@@ -79,7 +79,7 @@ export class Value {
     const out = new Value(this.data < 0 ? 0 : this.data, [this], "ReLu");
 
     out._backward = () => {
-      this.grad += out.data > 0 ? out.data * out.grad : 0;
+      this.grad += out.data > 0 ? out.grad : 0;
     };
 
     return out;
@@ -90,7 +90,7 @@ export class Value {
     const out = new Value(Math.exp(x), [this], "exp");
 
     out._backward = () => {
-      this.grad = out.data * out.grad;
+      this.grad += out.data * out.grad;
     };
 
     return out;
@@ -489,12 +489,9 @@ export class Trainer extends MLP {
     predictions: Value[][],
     normalizedBatch: TrainingItemNormalized[]
   ): Value {
-    const lossPerExample = predictions.map((pred, predictionsI) => {
+    const lossPerExample = predictions.map((pred, i) => {
       const softMaxPrediction = softMax(pred);
-      return crossEntropyLoss(
-        normalizedBatch[predictionsI].output,
-        softMaxPrediction
-      );
+      return crossEntropyLoss(normalizedBatch[i].output, softMaxPrediction);
     });
 
     return lossPerExample.reduce((prev, cur) => prev.add(cur));
@@ -508,18 +505,25 @@ function softMax(x: Value[]): Value[] {
   return x.map((item) => item.exp().div(sum));
 }
 
-export function crossEntropyLoss(truth: Value[], prediction: Value[]) {
-  const lossItems = truth.map((cur, index) =>
-    cur
-      .neg()
-      .mul(prediction[index])
-      .sub(v(1).sub(cur))
-      .mul(v(1).sub(prediction[index]).log())
-  );
+function crossEntropyLoss(truth: Value[], prediction: Value[]): Value {
+  // L = - sum( y_k * log(pred_k ) )
+  // Summed over all classes k, then typically averaged
+  const lossItems = truth.map((t, i) => {
+    // We want - y_k * log( \hat{y}_k )
+    return t.mul(prediction[i].log()); // no minus sign here yet
+  });
 
-  const loss = lossItems.reduce((prev, cur) => prev.add(cur));
+  // Sum up
+  let loss = lossItems.reduce((prev, cur) => prev.add(cur));
 
-  return loss.div(v(truth.length));
+  // Now multiply by -1 to get the negative log-likelihood
+  loss = loss.neg();
+
+  // If you want to average over the number of classes:
+  // (depends on your design, but typically it's an average)
+  loss = loss.div(v(truth.length));
+
+  return loss;
 }
 
 export class Classifier extends Trainer {

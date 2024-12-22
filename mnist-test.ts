@@ -16,9 +16,9 @@ async function go() {
     nouts: [
       { numLayer: 100, activationFunction: "relu" },
       { numLayer: 64, activationFunction: "relu" },
-      { numLayer: 10, activationFunction: "relu" },
+      { numLayer: 10, activationFunction: "tanh" },
     ],
-    bs: 20,
+    bs: 32,
     learningRate: 0.03,
   });
   console.log("Training");
