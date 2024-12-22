@@ -19,7 +19,7 @@ async function go() {
       { numLayer: 10, activationFunction: "softmax" },
     ],
     bs: 32,
-    iterations: 10,
+    iterations: 50,
     learningRate: 0.003,
   });
   console.log("Training");
