@@ -22,7 +22,7 @@ async function go() {
         { numLayer: 10, activationFunction: "softmax" },
       ],
       bs: 256,
-      iterations: 100,
+      iterations: 20,
       learningRate: 0.001,
     });
 
@@ -36,6 +36,10 @@ async function go() {
 
     console.timeEnd("Training duration");
     console.log("Training completed successfully");
+
+    console.log("Saving model...");
+    await net.saveModel(join(__dirname, "../model"));
+    console.log("Model saved successfully");
 
     // Clean up GPU resources
     net.dispose();

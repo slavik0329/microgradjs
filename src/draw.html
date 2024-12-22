@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MNIST Digit Drawing</title>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: Arial, sans-serif;
+        background-color: #f0f0f0;
+      }
+      #canvas {
+        border: 2px solid #333;
+        background-color: black;
+        margin: 20px;
+        cursor: crosshair;
+      }
+      .controls {
+        margin: 10px;
+        display: flex;
+        gap: 10px;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      #output {
+        width: 80%;
+        height: 100px;
+        margin: 20px;
+        padding: 10px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .preview {
+        margin: 20px;
+        text-align: center;
+      }
+      #previewCanvas {
+        border: 1px solid #666;
+        margin: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Draw a Digit</h1>
+    <canvas id="canvas" width="280" height="280"></canvas>
+    <div class="controls">
+      <button onclick="clearCanvas()">Clear</button>
+      <button onclick="generateCSV()">Generate CSV Row</button>
+    </div>
+    <div class="preview">
+      <h3>28x28 Preview:</h3>
+      <canvas id="previewCanvas" width="28" height="28"></canvas>
+    </div>
+    <textarea
+      id="output"
+      readonly
+      placeholder="CSV data will appear here..."
+    ></textarea>
+
+    <script>
+      const canvas = document.getElementById("canvas");
+      const previewCanvas = document.getElementById("previewCanvas");
+      const ctx = canvas.getContext("2d");
+      const previewCtx = previewCanvas.getContext("2d");
+      const output = document.getElementById("output");
+      let isDrawing = false;
+
+      // Setup canvas
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 20;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      // Drawing event listeners
+      canvas.addEventListener("mousedown", startDrawing);
+      canvas.addEventListener("mousemove", draw);
+      canvas.addEventListener("mouseup", stopDrawing);
+      canvas.addEventListener("mouseout", stopDrawing);
+
+      function startDrawing(e) {
+        isDrawing = true;
+        draw(e);
+      }
+
+      function draw(e) {
+        if (!isDrawing) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+      }
+
+      function stopDrawing() {
+        isDrawing = false;
+        ctx.beginPath();
+      }
+
+      function clearCanvas() {
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        previewCtx.fillStyle = "black";
+        previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+        output.value = "";
+      }
+
+      function generateCSV() {
+        // Draw the current canvas content to the preview canvas (28x28)
+        previewCtx.fillStyle = "black";
+        previewCtx.fillRect(0, 0, 28, 28);
+        previewCtx.drawImage(canvas, 0, 0, 280, 280, 0, 0, 28, 28);
+
+        // Get pixel data from the preview canvas
+        const imageData = previewCtx.getImageData(0, 0, 28, 28);
+        const pixels = [];
+
+        // Extract the brightness values (only need one channel since it's grayscale)
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          pixels.push(imageData.data[i]); // Red channel (same as green and blue in grayscale)
+        }
+
+        // Generate CSV row
+        output.value = pixels.join(",");
+
+        // Show success message
+        alert("CSV row generated! Copy the data from the textarea below.");
+      }
+
+      // Initialize with black background
+      clearCanvas();
+    </script>
+  </body>
+</html>

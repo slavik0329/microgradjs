@@ -140,9 +140,9 @@ export class GPUTrainer {
           console.log(
             `Epoch ${epoch + 1}/${this.iterations} - ` +
               `loss: ${logs?.loss.toFixed(4)} - ` +
-              `accuracy: ${(logs?.acc * 100).toFixed(1)}% - ` +
+              `accuracy: ${(logs!.acc * 100).toFixed(1)}% - ` +
               `val_loss: ${logs?.val_loss.toFixed(4)} - ` +
-              `val_accuracy: ${(logs?.val_acc * 100).toFixed(1)}%`
+              `val_accuracy: ${(logs!.val_acc * 100).toFixed(1)}%`
           );
         },
       },
@@ -167,5 +167,9 @@ export class GPUTrainer {
 
   dispose() {
     this.model.dispose();
+  }
+
+  async saveModel(path: string) {
+    await this.model.save(`file://${path}`);
   }
 }
